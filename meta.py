@@ -28,7 +28,9 @@ import os
 
 # Commands to run writer and reviewer. Adjust if using a different invocation method.
 # For example, if you truly need "uv run writer.py", replace ['python', 'writer.py'] accordingly.
-run_writer_cmd = lambda filename: ["uv", "run", "writer.py", "--prompt", f'"{filename}"']
+def run_writer_cmd(filename):
+    return ["uv", "run", "writer.py", "prompt", filename]
+
 run_reviewer_cmd = ["uv", "run", "reviewer.py"]
 
 # C++ source and executable names
@@ -52,6 +54,7 @@ def run_subprocess(cmd: list, capture_stdout: bool = True, capture_stderr: bool 
     Run a subprocess and return the CompletedProcess.
     stdout and stderr are captured by default.
     """
+    print(cmd)
     try:
         result = subprocess.run(
             cmd,
@@ -123,7 +126,9 @@ Feedbacks...
         with open("prompt.txt", "w", encoding="utf-8") as prompt_file:
             prompt_file.write(prompt)
 
-        writer_proc = run_subprocess(run_writer_cmd("prompt.txt"))
+        cmd = run_writer_cmd("prompt.txt")
+        print(f'{" ".join(cmd)}')
+        writer_proc = run_subprocess(cmd)
         if writer_proc.returncode != 0:
             print(f"[meta] writer.py exited with code {writer_proc.returncode}. Aborting.")
             sys.exit(1)
