@@ -29,7 +29,7 @@ import os
 # Commands to run writer and reviewer. Adjust if using a different invocation method.
 # For example, if you truly need "uv run writer.py", replace ['python', 'writer.py'] accordingly.
 def run_writer_cmd(filename):
-    return ["uv", "run", "writer.py", "prompt", filename]
+    return ["uv", "run", "writer.py"]
 
 run_reviewer_cmd = ["uv", "run", "reviewer.py"]
 

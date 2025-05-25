@@ -9,22 +9,23 @@ from mcp.client.stdio import stdio_client
 
 print("testttt:")
 async def main():
-    # 1. Read dynamic prompt from command-line arguments
-    if len(sys.argv) < 2:
-        print("[writer] Error: No prompt provided.", file=sys.stderr)
-        sys.exit(1)
-    # Join all arguments into a single prompt string (allowing spaces/newlines)
-    # Find the "--prompt" argument and get the next argument as the file path
-    if "prompt" not in sys.argv:
-        print("[writer] Error: --prompt argument not found.", file=sys.stderr)
-        sys.exit(1)
-    prompt_index = sys.argv.index("prompt")
-    print(f"prompt_index: {prompt_index}")
-    if prompt_index + 1 >= len(sys.argv):
-        print("[writer] Error: No file path provided after --prompt.", file=sys.stderr)
-        sys.exit(1)
-    prompt_file_path = sys.argv[prompt_index + 1]
-    print(prompt_file_path)
+    # # 1. Read dynamic prompt from command-line arguments
+    # if len(sys.argv) < 2:
+    #     print("[writer] Error: No prompt provided.", file=sys.stderr)
+    #     sys.exit(1)
+    # # Join all arguments into a single prompt string (allowing spaces/newlines)
+    # # Find the "--prompt" argument and get the next argument as the file path
+    # if "prompt" not in sys.argv:
+    #     print("[writer] Error: --prompt argument not found.", file=sys.stderr)
+    #     sys.exit(1)
+    # prompt_index = sys.argv.index("prompt")
+    # print(f"prompt_index: {prompt_index}")
+    # if prompt_index + 1 >= len(sys.argv):
+    #     print("[writer] Error: No file path provided after --prompt.", file=sys.stderr)
+    #     sys.exit(1)
+    # prompt_file_path = sys.argv[prompt_index + 1]
+    # print(prompt_file_path)
+    prompt_file_path = "prompt.txt"
     try:
         with open(prompt_file_path, "r", encoding="utf-8") as f:
             dynamic_prompt = f.read()
