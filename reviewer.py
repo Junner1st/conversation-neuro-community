@@ -1,43 +1,115 @@
 # reviewer.py
-import argparse
+
 import sys
+import os
+import re
+import glob
+import asyncio
+import ollama
 
-def generate_review_from_compile_errors(log_path: str) -> str:
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+LOG_PATTERN = "*.log"
+
+
+def find_latest_log() -> str:
     """
-    读取 compile.X.log，提取关键信息并生成审校意见。
-    你也可以把整个日志传给 Ollama 让它输出一段更自然的文字。
-    下面示例只是把日志原文放在前面，再附一句典型的人工建议。
+    Find the log file with the highest numeric prefix (e.g., '3.log' > '2.log').
+    Returns the filename, or raises FileNotFoundError if none found.
     """
+    log_files = glob.glob(LOG_PATTERN)
+    max_version = -1
+    latest_log = None
+
+    for fname in log_files:
+        base = os.path.basename(fname)
+        # Match filenames like '123.log'
+        m = re.match(r"^(\d+)\.log$", base)
+        if m:
+            version = int(m.group(1))
+            if version > max_version:
+                max_version = version
+                latest_log = fname
+
+    if latest_log is None:
+        raise FileNotFoundError("No log files matching '*.log' found.")
+    return latest_log
+
+
+async def main():
+    # 1. Locate and read the latest log file
     try:
-        with open(log_path, "r", encoding="utf-8", errors="ignore") as f:
-            compile_output = f.read()
-    except FileNotFoundError:
-        return "[reviewer] 找不到编译日志，请检查路径是否正确。\n"
+        latest_log = find_latest_log()
+    except FileNotFoundError as e:
+        print(f"[reviewer] Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
-    review_text = "[reviewer] 以下是编译错误日志原文：\n\n"
-    review_text += compile_output
-    review_text += "\n=== 审校建议 ===\n"
-    review_text += (
-        "请检查代码中报错行所指示的位置，"
-        "通常是缺少分号或括号不匹配。"
-        "根据日志中的提示逐一修复，然后重新编译。\n"
+    with open(latest_log, "r", encoding="utf-8") as f:
+        log_content = f.read()
+
+    # 2. Construct the review prompt using the log content
+    review_prompt = f"""
+You are a senior C++ code reviewer. The following is the entire content of the most recent log file ({latest_log}), which may contain compiler or runtime errors:
+
+```
+
+{log_content}
+
+```
+
+Please do the following:
+1. Analyze the errors above and provide detailed feedback on how to fix the C++ code.
+2. If you can propose a corrected C++ code snippet, wrap it inside triple backticks with "```cpp ... ```".
+3. Keep your feedback focused on solving the errors and improving code correctness.
+"""
+
+    # 3. Configure MCP client to connect to editor.py
+    server_params = StdioServerParameters(
+        command="uv",
+        args=["run", "editor.py"],
+        env=None
     )
-    return review_text
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--compile-log",
-        help="传入上一轮的编译日志路径 compile.X.log",
-        required=True
-    )
-    args = parser.parse_args()
+    async with stdio_client(server_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
 
-    review = generate_review_from_compile_errors(args.compile_log)
-    # 这里我们把 review 输出到 stdout，meta.py 会将 stdout 重定向到 compile.X.log
-    # 你也可以写到单独文件，或通过 MCP 传回更复杂的结构。
-    print(review)
-    sys.exit(0)
+            # 4. Use Ollama to generate review feedback
+            resp = ollama.generate(
+                model="deepseek-coder-v2",
+                prompt=review_prompt,
+                stream=False,
+                options={"num_ctx": 2048}
+            )
+            review_output = resp["response"]
+
+            # 5. Append the review feedback to discussion log via editor.py
+            append_success = await session.call_tool(
+                "append_comment",
+                arguments={"comment": review_output}
+            )
+            if not append_success:
+                print("[reviewer] Warning: Failed to append comment to discussion log.", file=sys.stderr)
+
+            # 6. Check if the review includes a corrected C++ snippet between ```cpp ... ```
+            code_matches = re.findall(r"```cpp(.*?)```", review_output, re.DOTALL)
+            if code_matches:
+                # If multiple code blocks found, take the first
+                corrected_code = code_matches[0].strip()
+
+                # 7. Save the corrected C++ code to shared_doc.cpp via editor.py
+                save_success = await session.call_tool(
+                    "save_document",
+                    arguments={"content": corrected_code}
+                )
+                if save_success:
+                    print("[reviewer] Corrected C++ code detected and saved to shared_doc.cpp")
+                else:
+                    print("[reviewer] Warning: Failed to save corrected C++ code.", file=sys.stderr)
+
+            # 8. Output the full review feedback to stdout (for meta.py to capture)
+            print(review_output)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

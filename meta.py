@@ -1,139 +1,197 @@
-# meta.py
+#!/usr/bin/env python3
+"""
+meta.py
+
+Orchestrator script that manages the following workflow each round:
+1. Invoke writer.py to generate/modify shared_doc.cpp.
+2. Compile shared_doc.cpp into a.out, logging to compile.<version>.log.
+3. If compile errors occur:
+      - Invoke reviewer.py for feedback.
+      - Increment version and repeat from step 1.
+   Else:
+4. Run a.out, logging to execute.<version>.log.
+5. If execution errors occur:
+      - Invoke reviewer.py for feedback.
+      - Increment version and repeat from step 1.
+   Else:
+6. Analyze output to decide completion. If not complete:
+      - Increment version and repeat from step 1.
+   Else:
+7. Exit successfully.
+"""
+
 import subprocess
-import time
 import sys
 import os
 
-def run_writer(error_log: str = None) -> bool:
-    """
-    运行 writer.py，让它根据（可选的）错误日志生成或修改 shared_doc.cpp。
-    如果提供了 error_log，则把 --error-log 参数传给 writer.py；
-    返回 True 表示 writer.py 执行成功（即进程退出码为 0）。
-    """
-    cmd = ["uv", "run", "writer.py"]
-    if error_log:
-        cmd += ["--error-log", error_log]
-    proc = subprocess.run(cmd)
-    return proc.returncode == 0
+# -------- Configuration --------
 
-def compile_cpp(version: int) -> tuple[int, str]:
-    """
-    用 gcc 编译 shared_doc.cpp，输出文件为 a.out。
-    将 gcc 的 stdout/stderr 都写入 compile.<version>.log。
-    返回 (gcc 返回码, compile_log_path)。
-    """
-    compile_log = f"compile.{version}.log"
-    with open(compile_log, "w", encoding="utf-8") as logf:
-        proc = subprocess.run(
-            ["gcc", "shared_doc.cpp", "-o", "a.out"],
-            stdout=logf,
-            stderr=logf
-        )
-    return proc.returncode, compile_log
+# Commands to run writer and reviewer. Adjust if using a different invocation method.
+# For example, if you truly need "uv run writer.py", replace ['python', 'writer.py'] accordingly.
+run_writer_cmd = lambda content: ["run", "uv", "writer.py", "--prompt", content]
+run_reviewer_cmd = ["run", "uv", "reviewer.py"]
 
-def run_executable(version: int) -> tuple[int, str]:
-    """
-    运行编译出的可执行文件 a.out，将 stdout/stderr 写入 execute.<version>.log。
-    返回 (执行返回码, execute_log_path)。
-    """
-    exec_log = f"execute.{version}.log"
-    # 确保可执行权限
-    if os.path.exists("a.out"):
-        os.chmod("a.out", 0o755)
-    with open(exec_log, "w", encoding="utf-8") as logf:
-        proc = subprocess.run(
-            ["./a.out"],
-            stdout=logf,
-            stderr=logf
-        )
-    return proc.returncode, exec_log
+# C++ source and executable names
+cpp_source = "shared_doc.cpp"
+executable = "a.out"
+excutor_command = lambda source, output: ["g++", source, "-std=c++17", "-Wall", "-Wextra", "-o", output]
 
-def run_reviewer(compile_log: str) -> bool:
-    """
-    当编译出错时，调用 reviewer.py 并传入 compile_log 路径。
-    返回 True 表示 reviewer.py 退出码为 0。
-    """
-    cmd = ["uv", "run", "reviewer.py", "--compile-log", compile_log]
-    proc = subprocess.run(cmd)
-    return proc.returncode == 0
+# Maximum number of rounds to avoid infinite loops (adjust as needed)
+MAX_ROUNDS = 10
 
-def check_task_complete(exec_log: str) -> bool:
-
+def check_completion(output: str) -> bool:
     """
-    简单地从 execute.<version>.log 中读取 stdout，判断是否包含“SUCCESS”关键字。
-    如果包含就认为任务完成，否则继续下一轮。
-    这个判断逻辑可以根据你的实际业务需求做调整。
+    Inspect 'output' from a.out and decide whether the task is complete.
+    Customize this function to match specific completion criteria.
+    Example: return True if "TASK_COMPLETED" appears in output.
+    """
+    return "TASK_COMPLETED" in output
+
+def run_subprocess(cmd: list, capture_stdout: bool = True, capture_stderr: bool = True) -> subprocess.CompletedProcess:
+    """
+    Run a subprocess and return the CompletedProcess.
+    stdout and stderr are captured by default.
     """
     try:
-        with open(exec_log, "r", encoding="utf-8") as f:
-            content = f.read()
-    except FileNotFoundError:
-        return False
-    return "SUCCESS" in content
+        result = subprocess.run(
+            cmd,
+            stdout=subprocess.PIPE if capture_stdout else None,
+            stderr=subprocess.PIPE if capture_stderr else None,
+            text=True,
+            check=False  # We manually inspect returncode
+        )
+        return result
+    except Exception as e:
+        print(f"[meta] Failed to run command: {' '.join(cmd)}\nError: {e}")
+        sys.exit(1)
+
+def write_to_log(filename: str, content: str):
+    """
+    Write 'content' to 'filename'. Overwrite if it exists.
+    """
+    try:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"[meta] Error writing to log {filename}: {e}")
+        sys.exit(1)
+
+def append_to_log(filename: str, content: str):
+    """
+    Append 'content' to 'filename'.
+    """
+    try:
+        with open(filename, "a", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        print(f"[meta] Error appending to log {filename}: {e}")
+        sys.exit(1)
 
 def main():
     version = 1
 
-    while True:
-        print(f"\n=== Round {version} Start ===")
+    Initial_prompt = \
+'''1. You are a C++ code generator. Your task is to generate a C++ program that meets the requirements specified in the prompt.
+2. The generated code should be complete and functional, capable of being compiled and executed without errors.
+3. The code should be written inside a pair of triple backticks (```cpp ... ```).
+4. The output format should be:
+```cpp
+code...
+```
+Feedbacks...
+5. Your Task: Generate a C++ Hello World program that prints "Hello, World!" to the console.
+'''
 
-        # 1. 先让 writer.py 运行一次（如果上轮有错误日志，就把日志路径传进去）
-        error_log = None
-        if version > 1:
-            # 如果不是第 1 轮，则可能有 compile.log 或 execute.log 传给 writer
-            # 这里默认先把 compile.log 传给 writer，实际也可以传 exec_log
-            compile_log = f"compile.{version-1}.log"
-            execute_log = f"execute.{version-1}.log"
-            # 如果上次编译已通过但运行失败，就把 exec_log 传给 writer；否则把 compile_log
-            if os.path.exists(compile_log):
-                with open(compile_log, "r", encoding="utf-8") as f:
-                    prev_compile = f.read()
-                # 如果上轮编译有错误（gcc 返回码 ≠ 0），就给 writer 传 compile_log
-                prev_gcc_ret = not ("error:" not in prev_compile and "Undefined" not in prev_compile)
-                if prev_gcc_ret:
-                    error_log = compile_log
-                else:
-                    # 若编译成功但运行失败，则给 writer 传 exec_log
-                    if os.path.exists(execute_log):
-                        with open(execute_log, "r", encoding="utf-8") as f:
-                            prev_exec = f.read()
-                        if "ERROR" in prev_exec or "Segmentation fault" in prev_exec:
-                            error_log = execute_log
+    while version <= MAX_ROUNDS:
+        print(f"\n[meta] === Round {version} ===")
 
-        print(f"[meta] Running writer.py (error_log={error_log})")
-        ok_writer = run_writer(error_log)
-        if not ok_writer:
-            print("[meta] ❌ writer.py 本身运行出错（exit code ≠ 0），请检查 writer.py 脚本。")
+        # 1. Invoke writer.py to (re)generate shared_doc.cpp
+        ## 1.1 Read log
+        log_filename = f"{version - 1}.log" if version > 1 else None
+        if log_filename and os.path.exists(log_filename):
+            with open(log_filename, "r", encoding="utf-8") as f:
+                last_log = f.read()
+            print(f"[meta] Last log ({log_filename}):\n{last_log}")
+        else:
+            last_log = None
+            print("[meta] No previous log found.")
+
+        ## 1.2 Run writer.py with the initial prompt or last log
+        print("[meta] Invoking writer.py ...")
+        prompt = Initial_prompt + "\n\n" + last_log if last_log else Initial_prompt
+
+        writer_proc = run_subprocess(run_writer_cmd(prompt))
+        if writer_proc.returncode != 0:
+            print(f"[meta] writer.py exited with code {writer_proc.returncode}. Aborting.")
             sys.exit(1)
 
-        # 2. 编译 shared_doc.cpp
-        print(f"[meta] Compiling shared_doc.cpp  → compile.{version}.log")
-        gcc_ret, compile_log_path = compile_cpp(version)
-        if gcc_ret != 0:
-            print(f"[meta] ❌ 编译失败 (gcc 返回码={gcc_ret})，调用 reviewer.py 提出意见")
-            run_reviewer(compile_log_path)
-            # 直接进入下一轮，让 writer 根据 compile.<version>.log 调整
-            version += 1
-            continue
+        # 2. Compile shared_doc.cpp
+        compile_log = f"{version}.log"
+        print(f"[meta] Compiling {cpp_source} → {executable}, logging to {compile_log}")
+        gcc_cmd = excutor_command(cpp_source, executable)
+        compile_proc = run_subprocess(gcc_cmd)
+        # Write compile stdout+stderr to log
+        compile_output = ""
+        if compile_proc.stdout:
+            compile_output += compile_proc.stdout
+        if compile_proc.stderr:
+            compile_output += compile_proc.stderr
+        write_to_log(compile_log, compile_output)
 
-        # 3. 编译成功，则执行可执行程序
-        print(f"[meta] 编译通过，运行 a.out  → execute.{version}.log")
-        exec_ret, exec_log_path = run_executable(version)
-        if exec_ret != 0:
-            print(f"[meta] ❌ 程序运行出错 (返回码={exec_ret})，进入下一轮让 writer 修改")
+        # 3. Check compile result
+        if compile_proc.returncode != 0:
+            print(f"[meta] Compilation failed (see {compile_log}). Invoking reviewer.py ...")
+            # 3-1. Invoke reviewer.py to analyze compile errors
+            reviewer_proc = run_subprocess(run_reviewer_cmd)
+            # Append reviewer feedback to compile log
+            feedback = "\n\n[meta] Reviewer feedback:\n"
+            if reviewer_proc.stdout:
+                feedback += reviewer_proc.stdout
+            if reviewer_proc.stderr:
+                feedback += reviewer_proc.stderr
+            append_to_log(compile_log, feedback)
             version += 1
-            continue
+            continue  # Next round
 
-        # 4. 程序正常返回，检查输出是否满足“任务完成”的条件
-        task_done = check_task_complete(exec_log_path)
-        if task_done:
-            print(f"[meta] ✅ 第 {version} 轮任务完成，退出流程。")
+        # 4. Run the compiled executable
+        run_log = f"{version}.log"
+        print(f"[meta] Running {executable}, logging to {run_log}")
+        exec_cmd = [f"./{executable}"]
+        exec_proc = run_subprocess(exec_cmd)
+        # Write execution stdout+stderr to log
+        exec_output = ""
+        if exec_proc.stdout:
+            exec_output += exec_proc.stdout
+        if exec_proc.stderr:
+            exec_output += exec_proc.stderr
+        write_to_log(run_log, exec_output)
+
+        # 5. Check execution result
+        if exec_proc.returncode != 0:
+            print(f"[meta] Execution failed (see {run_log}). Invoking reviewer.py ...")
+            reviewer_proc = run_subprocess(run_reviewer_cmd)
+            feedback = "\n\n[meta] Reviewer feedback:\n"
+            if reviewer_proc.stdout:
+                feedback += reviewer_proc.stdout
+            if reviewer_proc.stderr:
+                feedback += reviewer_proc.stderr
+            append_to_log(run_log, feedback)
+            version += 1
+            continue  # Next round
+
+        # 6. Analyze output to see if task is complete
+        print("[meta] Execution succeeded. Checking task completion criteria ...")
+        if check_completion(exec_output):
+            print(f"[meta] Task completion detected in round {version}. Exiting.")
             break
         else:
-            print(f"[meta] 🔄 第 {version} 轮程序运行正常，但未达成预期结果，进入下一轮。")
+            print(f"[meta] Task not complete in round {version}. Proceeding to next round.")
             version += 1
 
-    print("\n=== All Done ===")
+    else:
+        # 如果达到 MAX_ROUNDS 仍未完成
+        print(f"[meta] Reached maximum rounds ({MAX_ROUNDS}) without completion. Exiting with failure.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
