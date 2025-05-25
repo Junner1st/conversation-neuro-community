@@ -28,8 +28,8 @@ import os
 
 # Commands to run writer and reviewer. Adjust if using a different invocation method.
 # For example, if you truly need "uv run writer.py", replace ['python', 'writer.py'] accordingly.
-run_writer_cmd = lambda content: ["run", "uv", "writer.py", "--prompt", content]
-run_reviewer_cmd = ["run", "uv", "reviewer.py"]
+run_writer_cmd = lambda filename: ["uv", "run", "writer.py", "--prompt", f'"{filename}"']
+run_reviewer_cmd = ["uv", "run", "reviewer.py"]
 
 # C++ source and executable names
 cpp_source = "shared_doc.cpp"
@@ -90,8 +90,7 @@ def append_to_log(filename: str, content: str):
 def main():
     version = 1
 
-    Initial_prompt = \
-'''1. You are a C++ code generator. Your task is to generate a C++ program that meets the requirements specified in the prompt.
+    Initial_prompt = '''1. You are a C++ code generator. Your task is to generate a C++ program that meets the requirements specified in the prompt.
 2. The generated code should be complete and functional, capable of being compiled and executed without errors.
 3. The code should be written inside a pair of triple backticks (```cpp ... ```).
 4. The output format should be:
@@ -118,9 +117,13 @@ Feedbacks...
 
         ## 1.2 Run writer.py with the initial prompt or last log
         print("[meta] Invoking writer.py ...")
-        prompt = Initial_prompt + "\n\n" + last_log if last_log else Initial_prompt
+        prompt = (Initial_prompt + "\n\n" + last_log) if last_log else Initial_prompt
+        print(f"[meta] Delivering prompt to writer.py:\n{prompt}")
 
-        writer_proc = run_subprocess(run_writer_cmd(prompt))
+        with open("prompt.txt", "w", encoding="utf-8") as prompt_file:
+            prompt_file.write(prompt)
+
+        writer_proc = run_subprocess(run_writer_cmd("prompt.txt"))
         if writer_proc.returncode != 0:
             print(f"[meta] writer.py exited with code {writer_proc.returncode}. Aborting.")
             sys.exit(1)

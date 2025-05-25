@@ -13,7 +13,21 @@ async def main():
         print("[writer] Error: No prompt provided.", file=sys.stderr)
         sys.exit(1)
     # Join all arguments into a single prompt string (allowing spaces/newlines)
-    dynamic_prompt = " ".join(sys.argv[1:])
+    # Find the "--prompt" argument and get the next argument as the file path
+    if "--prompt" not in sys.argv:
+        print("[writer] Error: --prompt argument not found.", file=sys.stderr)
+        sys.exit(1)
+    prompt_index = sys.argv.index("--prompt")
+    if prompt_index + 1 >= len(sys.argv):
+        print("[writer] Error: No file path provided after --prompt.", file=sys.stderr)
+        sys.exit(1)
+    prompt_file_path = sys.argv[prompt_index + 1]
+    try:
+        with open(prompt_file_path, "r", encoding="utf-8") as f:
+            dynamic_prompt = f.read()
+    except Exception as e:
+        print(f"[writer] Error: Failed to read prompt file: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # 2. Configure MCP server parameters to invoke editor.py
     server_params = StdioServerParameters(
