@@ -38,7 +38,15 @@ executable = "a.out"
 excutor_command = lambda source, output: ["g++", source, "-std=c++17", "-Wall", "-Wextra", "-o", output]
 
 # Maximum number of rounds to avoid infinite loops (adjust as needed)
-MAX_ROUNDS = 10
+MAX_ROUNDS = 15
+
+
+DOC_PATH = "shared_doc.cpp"
+LOG_PATH = "discussion_log.txt"
+for path in (DOC_PATH, LOG_PATH):
+    if not os.path.exists(path):
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write("")
 
 def check_completion(output: str) -> bool:
     """
@@ -94,14 +102,17 @@ def main():
 
     Initial_prompt = '''1. You are a C++ code generator. Your task is to generate a C++ program that meets the requirements specified in the prompt.
 2. The generated code should be complete and functional, capable of being compiled and executed without errors.
-3. The code should be written inside a pair of triple backticks (```cpp ... ```).
+3. The "whole code" should be written inside a pair of triple backticks (```cpp ... ```).
 4. The output format should be:
 ```cpp
 code...
 ```
 Feedbacks...
-5. Your Task: Generate a C++ Hello World program that prints "Hello, World!" to the console.
+5. Your Task: Make a C++ uint128 type from uint64. And please implement all basic operations (+,-,*,/,>>,<<,>,<,=) and type transformations for this type.
 '''
+
+# 5. Your Task: Generate a C++ Hello World program that prints "Hello, World!" to the console.
+
 
     while version <= MAX_ROUNDS:
         print(f"\n[meta] === Round {version} ===")

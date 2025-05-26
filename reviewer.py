@@ -56,28 +56,35 @@ async def main():
 
     with open(latest_log, "r", encoding="utf-8") as f:
         log_content = f.read()
-    
+
     with open("shared_doc.cpp", "r", encoding="utf-8") as f:
         code = f.read()
 
+    with open("prompt.txt", "r", encoding="utf-8") as f:
+        initial_prompt = f.read()
     # 2. Construct the review prompt using the log content
     review_prompt = f"""
-You are a senior C++ code reviewer. The following is the entire content of the most recent log file ({latest_log}), which may contain compiler or runtime errors:
-
+You are a senior C++ code reviewer. Here is the task for the writer:
 ```
-{log_content}
+{initial_prompt}
 ```
+and your mission is to give advise and the correct code.
 
 Here is the current C++ code in shared_doc.cpp:
 ```cpp
 {code}
 ```
 
+The following is the entire content of the most recent log file ({latest_log}), which may contain compiler or runtime errors:
+```
+{log_content}
+```
+
 Please do the following:
 1. Analyze the errors above and provide detailed feedback on how to fix the C++ code.
-2. If you can propose a corrected C++ code snippet, wrap it inside triple backticks with "```cpp ... ```".
+2. If you can propose a corrected C++ code snippet, wrap it all inside a pair of triple backticks with "```cpp ... ```".
 3. Keep your feedback focused on solving the errors and improving code correctness.
-4. Make a FINAL summary of ["TASK_COMPLETED", "TASK_FAILED"]. If it's all ok and no errors, out an final status "TASK_COMPLETED", vice versa.
+4. Make a FINAL summary of ["TASK_COMPLETED", "TASK_OK", "TASK_FAILED"]. If the code align to writer's task, no errors in the log, and nothing to imporve, output an final status "TASK_COMPLETED". And if there is error or warnning in the log, or something need to be disscussed, the final status is "TASK_OK". If there is a massive of error, the status' going to be "TASK_FAILED".
 """
 
     # 3. Configure MCP client to connect to editor.py
@@ -93,15 +100,19 @@ Please do the following:
 
             # 4. Use Ollama to generate review feedback
             resp = ollama.generate(
-                model="deepseek-coder-v2",
+                model="yi:34b",
                 prompt=review_prompt,
                 stream=False,
-                options={"num_ctx": 2048}
+                options={"num_ctx": 4000}
             )
             review_output = resp["response"]
             logging.info(f"[reviewer] Review output: {review_output}")
 
             # 5. Append the review feedback to discussion log via editor.py
+
+            review_output = "=====================================================================================================\n" \
+                            + review_output
+
             append_success = await session.call_tool(
                 "append_comment",
                 arguments={"comment": review_output}
@@ -114,16 +125,6 @@ Please do the following:
             # if code_matches:
             #     # If multiple code blocks found, take the first
             #     corrected_code = code_matches[0].strip()
-
-            # 7. Save the corrected C++ code to shared_doc.cpp via editor.py
-            save_success = await session.call_tool(
-                "save_document",
-                arguments={"content": review_output}
-            )
-            if save_success:
-                logging.info("[reviewer] Corrected C++ code detected and saved to shared_doc.cpp")
-            else:
-                logging.info("[reviewer] Warning: Failed to save corrected C++ code.")
 
             # 8. Output the full review feedback to stdout (for meta.py to capture)
             logging.info(review_output)

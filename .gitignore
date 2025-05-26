@@ -1,6 +1,7 @@
 discussion_log.txt
 prompt.txt
 shared_doc.cpp
+*.log
 
 # Compiled object files
 *.o
