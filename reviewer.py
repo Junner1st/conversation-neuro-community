@@ -6,9 +6,18 @@ import re
 import glob
 import asyncio
 import ollama
+import logging
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+
+logging.basicConfig(
+    filename="reviewer.log",
+    filemode="a",
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=logging.INFO
+)
+
 
 LOG_PATTERN = "*.log"
 
@@ -42,7 +51,7 @@ async def main():
     try:
         latest_log = find_latest_log()
     except FileNotFoundError as e:
-        print(f"[reviewer] Error: {e}", file=sys.stderr)
+        logging.error(f"[reviewer] Error: {e}", file=sys.stderr)
         sys.exit(1)
 
     with open(latest_log, "r", encoding="utf-8") as f:
@@ -68,6 +77,7 @@ Please do the following:
 1. Analyze the errors above and provide detailed feedback on how to fix the C++ code.
 2. If you can propose a corrected C++ code snippet, wrap it inside triple backticks with "```cpp ... ```".
 3. Keep your feedback focused on solving the errors and improving code correctness.
+4. Make a FINAL summary of ["TASK_COMPLETED", "TASK_FAILED"]. If it's all ok and no errors, out an final status "TASK_COMPLETED", vice versa.
 """
 
     # 3. Configure MCP client to connect to editor.py
@@ -89,6 +99,7 @@ Please do the following:
                 options={"num_ctx": 2048}
             )
             review_output = resp["response"]
+            logging.info(f"[reviewer] Review output: {review_output}")
 
             # 5. Append the review feedback to discussion log via editor.py
             append_success = await session.call_tool(
@@ -96,26 +107,27 @@ Please do the following:
                 arguments={"comment": review_output}
             )
             if not append_success:
-                print("[reviewer] Warning: Failed to append comment to discussion log.", file=sys.stderr)
+                logging.info("[reviewer] Warning: Failed to append comment to discussion log.")
 
             # 6. Check if the review includes a corrected C++ snippet between ```cpp ... ```
-            code_matches = re.findall(r"```cpp(.*?)```", review_output, re.DOTALL)
-            if code_matches:
-                # If multiple code blocks found, take the first
-                corrected_code = code_matches[0].strip()
+            # code_matches = re.findall(r"```cpp(.*?)```", review_output, re.DOTALL)
+            # if code_matches:
+            #     # If multiple code blocks found, take the first
+            #     corrected_code = code_matches[0].strip()
 
-                # 7. Save the corrected C++ code to shared_doc.cpp via editor.py
-                save_success = await session.call_tool(
-                    "save_document",
-                    arguments={"content": corrected_code}
-                )
-                if save_success:
-                    print("[reviewer] Corrected C++ code detected and saved to shared_doc.cpp")
-                else:
-                    print("[reviewer] Warning: Failed to save corrected C++ code.", file=sys.stderr)
+            # 7. Save the corrected C++ code to shared_doc.cpp via editor.py
+            save_success = await session.call_tool(
+                "save_document",
+                arguments={"content": review_output}
+            )
+            if save_success:
+                logging.info("[reviewer] Corrected C++ code detected and saved to shared_doc.cpp")
+            else:
+                logging.info("[reviewer] Warning: Failed to save corrected C++ code.")
 
             # 8. Output the full review feedback to stdout (for meta.py to capture)
-            print(review_output)
+            logging.info(review_output)
 
 if __name__ == "__main__":
     asyncio.run(main())
+

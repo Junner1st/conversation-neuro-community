@@ -174,21 +174,24 @@ Feedbacks...
         write_to_log(run_log, exec_output)
 
         # 5. Check execution result
-        if exec_proc.returncode != 0:
-            print(f"[meta] Execution failed (see {run_log}). Invoking reviewer.py ...")
-            reviewer_proc = run_subprocess(run_reviewer_cmd)
-            feedback = "\n\n[meta] Reviewer feedback:\n"
-            if reviewer_proc.stdout:
-                feedback += reviewer_proc.stdout
-            if reviewer_proc.stderr:
-                feedback += reviewer_proc.stderr
-            append_to_log(run_log, feedback)
-            version += 1
-            continue  # Next round
+        # print(f"[meta] Execution failed (see {run_log}). Invoking reviewer.py ...")
+        print(f"[meta] Execution finished. (see {run_log}). Invoking reviewer.py ...")
+        reviewer_proc = run_subprocess(run_reviewer_cmd)
+        feedback = "\n\n[meta] Reviewer feedback:\n"
+        if reviewer_proc.stdout:
+            feedback += reviewer_proc.stdout
+        if reviewer_proc.stderr:
+            feedback += reviewer_proc.stderr
+        append_to_log(run_log, feedback)
+        version += 1
+        # continue  # Next round
 
         # 6. Analyze output to see if task is complete
         print("[meta] Execution succeeded. Checking task completion criteria ...")
-        if check_completion(exec_output):
+        with open("reviewer.log", "r", encoding="utf-8") as f:
+            reviewer_log = f.read()
+        #if check_completion(exec_output):
+        if check_completion(reviewer_log):
             print(f"[meta] Task completion detected in round {version}. Exiting.")
             break
         else:
