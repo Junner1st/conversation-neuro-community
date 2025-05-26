@@ -4,6 +4,19 @@ import os
 from typing import Tuple
 import re
 
+import logging
+
+# 設定 logging，輸出到 editor.log
+logging.basicConfig(
+    filename="editor.log",
+    filemode="a",
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    level=logging.INFO
+)
+
+logging.info("Editor started.")
+
+
 # 文档路径与日志路径
 DOC_PATH = "shared_doc.cpp"
 LOG_PATH = "discussion_log.txt"
@@ -31,7 +44,8 @@ for path in (DOC_PATH, LOG_PATH):
         with open(path, 'w', encoding='utf-8') as f:
             f.write("")
 
-# 创建 MCP Server 实例                                                                                                               mcp = FastMCP("joint-edit-server")
+# 创建 MCP Server 实例
+mcp = FastMCP("joint-edit-server")
 
 @mcp.tool()
 def load_document() -> str:
@@ -56,6 +70,8 @@ def append_comment(comment: str) -> bool:
     try:
         with open(LOG_PATH, 'a', encoding='utf-8') as f:
             f.write(comment.replace('\n', ' ') + "\n")
+        logging.info(f"Appended comment: {comment}")
+        
         return True
     except Exception:
         return False

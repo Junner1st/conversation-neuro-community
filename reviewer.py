@@ -47,15 +47,21 @@ async def main():
 
     with open(latest_log, "r", encoding="utf-8") as f:
         log_content = f.read()
+    
+    with open("shared_doc.cpp", "r", encoding="utf-8") as f:
+        code = f.read()
 
     # 2. Construct the review prompt using the log content
     review_prompt = f"""
 You are a senior C++ code reviewer. The following is the entire content of the most recent log file ({latest_log}), which may contain compiler or runtime errors:
 
 ```
-
 {log_content}
+```
 
+Here is the current C++ code in shared_doc.cpp:
+```cpp
+{code}
 ```
 
 Please do the following:
