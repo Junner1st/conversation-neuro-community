@@ -2,7 +2,8 @@
 
 - uv enviroment
   - Python 3.10.17
-  - mcp from uv 
+  - mcp from uv
+  - ollama
 
 ## Optional
 - Ubuntu Focal Fossa
